@@ -1,0 +1,86 @@
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import StatCard from "@/components/dashboard/StatCard";
+import ProjectList from "@/components/dashboard/ProjectList";
+import TaskList from "@/components/dashboard/TaskList";
+import ActivityFeed from "@/components/dashboard/ActivityFeed";
+import TaskModal from "@/components/tasks/TaskModal";
+import { Briefcase, CheckCircle, Clock, FileText } from "lucide-react";
+
+const Dashboard = () => {
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  
+  const { data: stats = { totalProjects: 0, activeTasks: 0, completedTasks: 0, pendingApprovals: 0 }, isLoading: statsLoading } = 
+    useQuery({ queryKey: ['/api/stats'] });
+  
+  const { data: projects = [], isLoading: projectsLoading } = 
+    useQuery({ queryKey: ['/api/projects'] });
+  
+  const { data: tasks = [], isLoading: tasksLoading } = 
+    useQuery({ queryKey: ['/api/tasks'] });
+  
+  const { data: activities = [], isLoading: activitiesLoading } = 
+    useQuery({ queryKey: ['/api/activities'] });
+  
+  return (
+    <>
+      <h1 className="text-2xl font-bold mb-8 text-primary-900">Dashboard</h1>
+      
+      <div className="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard 
+          title="Total Projects" 
+          value={stats.totalProjects} 
+          change={2} 
+          icon={<Briefcase className="h-6 w-6 text-accent-600" />} 
+          iconBgColor="bg-accent-100"
+          loading={statsLoading}
+        />
+        <StatCard 
+          title="Active Tasks" 
+          value={stats.activeTasks} 
+          change={5} 
+          icon={<Clock className="h-6 w-6 text-yellow-600" />} 
+          iconBgColor="bg-yellow-100"
+          loading={statsLoading}
+        />
+        <StatCard 
+          title="Completed Tasks" 
+          value={stats.completedTasks} 
+          change={3} 
+          icon={<CheckCircle className="h-6 w-6 text-green-600" />} 
+          iconBgColor="bg-green-100"
+          loading={statsLoading}
+        />
+        <StatCard 
+          title="Pending Approvals" 
+          value={stats.pendingApprovals} 
+          change={-2} 
+          icon={<FileText className="h-6 w-6 text-blue-600" />} 
+          iconBgColor="bg-blue-100"
+          type="negative"
+          loading={statsLoading}
+        />
+      </div>
+      
+      <div className="grid grid-cols-1 gap-6 mb-8 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <ProjectList projects={projects} loading={projectsLoading} />
+        </div>
+        <div>
+          <ActivityFeed activities={activities} loading={activitiesLoading} />
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-1">
+        <TaskList tasks={tasks} loading={tasksLoading} onAddTask={() => setIsTaskModalOpen(true)} />
+      </div>
+      
+      <TaskModal 
+        isOpen={isTaskModalOpen} 
+        onClose={() => setIsTaskModalOpen(false)}
+      />
+    </>
+  );
+};
+
+export default Dashboard;
