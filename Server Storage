@@ -1,0 +1,425 @@
+import { 
+  users, type User, type InsertUser,
+  projects, type Project, type InsertProject,
+  tasks, type Task, type InsertTask,
+  activities, type Activity, type InsertActivity 
+} from "@shared/schema";
+
+// Interface for all storage operations
+export interface IStorage {
+  // User operations
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  getAllUsers(): Promise<User[]>;
+  
+  // Project operations
+  getProject(id: number): Promise<Project | undefined>;
+  getAllProjects(): Promise<Project[]>;
+  createProject(project: InsertProject): Promise<Project>;
+  updateProject(id: number, project: Partial<Project>): Promise<Project | undefined>;
+  deleteProject(id: number): Promise<boolean>;
+  
+  // Task operations
+  getTask(id: number): Promise<Task | undefined>;
+  getAllTasks(): Promise<Task[]>;
+  getTasksByProject(projectId: number): Promise<Task[]>;
+  createTask(task: InsertTask): Promise<Task>;
+  updateTask(id: number, task: Partial<Task>): Promise<Task | undefined>;
+  deleteTask(id: number): Promise<boolean>;
+  
+  // Activity operations
+  getActivity(id: number): Promise<Activity | undefined>;
+  getAllActivities(): Promise<Activity[]>;
+  createActivity(activity: InsertActivity): Promise<Activity>;
+  
+  // Stats
+  getStats(): Promise<{
+    totalProjects: number;
+    activeTasks: number;
+    completedTasks: number;
+    pendingApprovals: number;
+  }>;
+}
+
+// In-memory storage implementation
+export class MemStorage implements IStorage {
+  private users: Map<number, User>;
+  private projects: Map<number, Project>;
+  private tasks: Map<number, Task>;
+  private activities: Map<number, Activity>;
+  
+  // ID counters
+  private userIdCounter: number;
+  private projectIdCounter: number;
+  private taskIdCounter: number;
+  private activityIdCounter: number;
+
+  constructor() {
+    this.users = new Map();
+    this.projects = new Map();
+    this.tasks = new Map();
+    this.activities = new Map();
+    
+    this.userIdCounter = 1;
+    this.projectIdCounter = 1;
+    this.taskIdCounter = 1;
+    this.activityIdCounter = 1;
+    
+    // Initialize with sample data
+    this.initSampleData();
+  }
+  
+  // User operations
+  async getUser(id: number): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.username === username
+    );
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const id = this.userIdCounter++;
+    const user: User = { ...insertUser, id };
+    this.users.set(id, user);
+    return user;
+  }
+  
+  async getAllUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
+  }
+  
+  // Project operations
+  async getProject(id: number): Promise<Project | undefined> {
+    return this.projects.get(id);
+  }
+  
+  async getAllProjects(): Promise<Project[]> {
+    return Array.from(this.projects.values());
+  }
+  
+  async createProject(insertProject: InsertProject): Promise<Project> {
+    const id = this.projectIdCounter++;
+    const now = new Date();
+    const project: Project = { 
+      ...insertProject, 
+      id, 
+      createdAt: now 
+    };
+    this.projects.set(id, project);
+    
+    // Create activity for new project
+    await this.createActivity({
+      user: "Admin User",
+      action: `Created new project <span class="font-medium">${project.name}</span>`,
+    });
+    
+    return project;
+  }
+  
+  async updateProject(id: number, updateData: Partial<Project>): Promise<Project | undefined> {
+    const project = this.projects.get(id);
+    if (!project) return undefined;
+    
+    const updatedProject = { ...project, ...updateData };
+    this.projects.set(id, updatedProject);
+    
+    // Create activity for project update
+    await this.createActivity({
+      user: "Admin User",
+      action: `Updated project <span class="font-medium">${project.name}</span>`,
+    });
+    
+    return updatedProject;
+  }
+  
+  async deleteProject(id: number): Promise<boolean> {
+    const project = this.projects.get(id);
+    if (!project) return false;
+    
+    const deleted = this.projects.delete(id);
+    
+    if (deleted) {
+      // Delete associated tasks
+      const projectTasks = await this.getTasksByProject(id);
+      for (const task of projectTasks) {
+        await this.deleteTask(task.id);
+      }
+      
+      // Create activity for project deletion
+      await this.createActivity({
+        user: "Admin User",
+        action: `Deleted project <span class="font-medium">${project.name}</span>`,
+      });
+    }
+    
+    return deleted;
+  }
+  
+  // Task operations
+  async getTask(id: number): Promise<Task | undefined> {
+    return this.tasks.get(id);
+  }
+  
+  async getAllTasks(): Promise<Task[]> {
+    return Array.from(this.tasks.values());
+  }
+  
+  async getTasksByProject(projectId: number): Promise<Task[]> {
+    return Array.from(this.tasks.values()).filter(
+      (task) => task.projectId === projectId
+    );
+  }
+  
+  async createTask(insertTask: InsertTask): Promise<Task> {
+    const id = this.taskIdCounter++;
+    const now = new Date();
+    const task: Task = { 
+      ...insertTask, 
+      id, 
+      createdAt: now 
+    };
+    this.tasks.set(id, task);
+    
+    // Create activity for new task
+    const project = await this.getProject(task.projectId);
+    await this.createActivity({
+      user: "Admin User",
+      action: `Added task <span class="font-medium">${task.name}</span> to ${project?.name || 'project'}`,
+    });
+    
+    return task;
+  }
+  
+  async updateTask(id: number, updateData: Partial<Task>): Promise<Task | undefined> {
+    const task = this.tasks.get(id);
+    if (!task) return undefined;
+    
+    const updatedTask = { ...task, ...updateData };
+    this.tasks.set(id, updatedTask);
+    
+    // Create activity for task update
+    let actionText = `Updated task <span class="font-medium">${task.name}</span>`;
+    if (updateData.completed !== undefined && updateData.completed !== task.completed) {
+      actionText = updateData.completed 
+        ? `Completed task <span class="font-medium">${task.name}</span>` 
+        : `Reopened task <span class="font-medium">${task.name}</span>`;
+    }
+    
+    await this.createActivity({
+      user: task.assignee,
+      action: actionText,
+    });
+    
+    return updatedTask;
+  }
+  
+  async deleteTask(id: number): Promise<boolean> {
+    const task = this.tasks.get(id);
+    if (!task) return false;
+    
+    const deleted = this.tasks.delete(id);
+    
+    if (deleted) {
+      // Create activity for task deletion
+      await this.createActivity({
+        user: "Admin User",
+        action: `Deleted task <span class="font-medium">${task.name}</span>`,
+      });
+    }
+    
+    return deleted;
+  }
+  
+  // Activity operations
+  async getActivity(id: number): Promise<Activity | undefined> {
+    return this.activities.get(id);
+  }
+  
+  async getAllActivities(): Promise<Activity[]> {
+    return Array.from(this.activities.values())
+      .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+  }
+  
+  async createActivity(insertActivity: InsertActivity): Promise<Activity> {
+    const id = this.activityIdCounter++;
+    const now = new Date();
+    const activity: Activity = { 
+      ...insertActivity, 
+      id, 
+      time: now 
+    };
+    this.activities.set(id, activity);
+    return activity;
+  }
+  
+  // Stats
+  async getStats(): Promise<{
+    totalProjects: number;
+    activeTasks: number;
+    completedTasks: number;
+    pendingApprovals: number;
+  }> {
+    const allProjects = await this.getAllProjects();
+    const allTasks = await this.getAllTasks();
+    
+    return {
+      totalProjects: allProjects.length,
+      activeTasks: allTasks.filter(task => !task.completed).length,
+      completedTasks: allTasks.filter(task => task.completed).length,
+      pendingApprovals: Math.floor(Math.random() * 10) // Simulated for demo
+    };
+  }
+  
+  // Helper to initialize sample data
+  private async initSampleData() {
+    // Create sample users
+    const users = [
+      { username: "alex", password: "password", name: "Alex Smith", email: "alex@example.com" },
+      { username: "jessica", password: "password", name: "Jessica Davis", email: "jessica@example.com" },
+      { username: "mike", password: "password", name: "Mike Johnson", email: "mike@example.com" },
+      { username: "sara", password: "password", name: "Sara Lee", email: "sara@example.com" },
+      { username: "robert", password: "password", name: "Robert Brown", email: "robert@example.com" },
+    ];
+    
+    for (const user of users) {
+      await this.createUser(user);
+    }
+    
+    // Create sample projects
+    const projects = [
+      { name: "Website Redesign", client: "Acme Inc.", status: "Active", dueDate: "Aug 15, 2023" },
+      { name: "Mobile App Development", client: "TechCorp", status: "In Progress", dueDate: "Sep 30, 2023" },
+      { name: "CRM Integration", client: "Global Services", status: "Active", dueDate: "Oct 10, 2023" },
+      { name: "E-commerce Platform", client: "Retail Solutions", status: "Delayed", dueDate: "Jul 28, 2023" },
+    ];
+    
+    const createdProjects: Project[] = [];
+    for (const project of projects) {
+      createdProjects.push(await this.createProject(project));
+    }
+    
+    // Create sample tasks
+    const tasks = [
+      { 
+        name: "Design homepage wireframes", 
+        description: "Create wireframes for the homepage design", 
+        projectId: 1, 
+        assignee: "Alex Smith", 
+        priority: "High", 
+        dueDate: "Tomorrow", 
+        completed: false 
+      },
+      { 
+        name: "Set up API authentication", 
+        description: "Implement secure API authentication", 
+        projectId: 2, 
+        assignee: "Mike Johnson", 
+        priority: "Medium", 
+        dueDate: "Aug 2, 2023", 
+        completed: false 
+      },
+      { 
+        name: "Implement data integration", 
+        description: "Connect CRM with existing data sources", 
+        projectId: 3, 
+        assignee: "Sara Lee", 
+        priority: "High", 
+        dueDate: "Aug 5, 2023", 
+        completed: false 
+      },
+      { 
+        name: "Create product catalog schema", 
+        description: "Design database schema for product catalog", 
+        projectId: 4, 
+        assignee: "Robert Brown", 
+        priority: "Low", 
+        dueDate: "Aug 10, 2023", 
+        completed: false 
+      },
+      { 
+        name: "Update navigation menu", 
+        description: "Improve navigation UX", 
+        projectId: 1, 
+        assignee: "Jessica Davis", 
+        priority: "Medium", 
+        dueDate: "Aug 3, 2023", 
+        completed: false 
+      },
+      { 
+        name: "Mobile app testing", 
+        description: "Test app on various devices", 
+        projectId: 2, 
+        assignee: "Alex Smith", 
+        priority: "High", 
+        dueDate: "Sep 15, 2023", 
+        completed: false 
+      },
+      { 
+        name: "Setup search functionality", 
+        description: "Implement search features for the platform", 
+        projectId: 4, 
+        assignee: "Mike Johnson", 
+        priority: "Medium", 
+        dueDate: "Aug 20, 2023", 
+        completed: false 
+      },
+      { 
+        name: "Data migration planning", 
+        description: "Plan the data migration strategy", 
+        projectId: 3, 
+        assignee: "Jessica Davis", 
+        priority: "High", 
+        dueDate: "Aug 15, 2023", 
+        completed: false 
+      }
+    ];
+    
+    for (const task of tasks) {
+      await this.createTask(task);
+    }
+    
+    // Create sample activities (beyond those created by the operations above)
+    const activities = [
+      { 
+        user: "Alex Smith", 
+        action: "Completed task <span class=\"font-medium\">Update homepage banner</span>" 
+      },
+      { 
+        user: "Jessica Davis", 
+        action: "Created new project <span class=\"font-medium\">E-commerce Platform</span>" 
+      },
+      { 
+        user: "Mike Johnson", 
+        action: "Added comment to <span class=\"font-medium\">Mobile App Development</span>" 
+      },
+      { 
+        user: "Sara Lee", 
+        action: "Assigned <span class=\"font-medium\">5 new tasks</span> to team" 
+      },
+      { 
+        user: "Robert Brown", 
+        action: "Updated deadline for <span class=\"font-medium\">Website Redesign</span>" 
+      }
+    ];
+    
+    // Adjust timestamps to make activities appear at different times
+    let timeOffset = 0;
+    for (const activity of activities) {
+      const activityObj = await this.createActivity(activity);
+      
+      // Set custom times for the predefined activities
+      const now = new Date();
+      const customTime = new Date(now.getTime() - (2 + timeOffset) * 60 * 60 * 1000); // hours ago
+      timeOffset += 2;
+      
+      const updatedActivity = { ...activityObj, time: customTime };
+      this.activities.set(activityObj.id, updatedActivity);
+    }
+  }
+}
+
+export const storage = new MemStorage();
