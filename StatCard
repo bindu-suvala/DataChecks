@@ -1,0 +1,83 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ReactNode } from "react";
+
+interface StatCardProps {
+  title: string;
+  value: number;
+  change: number;
+  icon: ReactNode;
+  iconBgColor: string;
+  loading?: boolean;
+  type?: 'positive' | 'negative';
+}
+
+const StatCard = ({ 
+  title, 
+  value, 
+  change, 
+  icon, 
+  iconBgColor,
+  loading = false,
+  type = 'positive' 
+}: StatCardProps) => {
+  const isPositive = type === 'positive' || (change >= 0 && type !== 'negative');
+  const changeColor = isPositive ? 'text-green-600' : 'text-red-600';
+  const changeSvg = isPositive ? (
+    <svg className="self-center flex-shrink-0 h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+      <path fillRule="evenodd" d="M5.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 7.414V15a1 1 0 11-2 0V7.414L6.707 9.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+    </svg>
+  ) : (
+    <svg className="self-center flex-shrink-0 h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+      <path fillRule="evenodd" d="M14.707 10.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 12.586V5a1 1 0 012 0v7.586l2.293-2.293a1 1 0 011.414 0z" clipRule="evenodd" />
+    </svg>
+  );
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="px-4 py-5 sm:p-6">
+          <div className="flex items-center">
+            <Skeleton className="flex-shrink-0 rounded-md p-3 h-12 w-12" />
+            <div className="ml-5 w-0 flex-1">
+              <Skeleton className="h-5 w-32 mb-2" />
+              <div className="flex items-baseline">
+                <Skeleton className="h-8 w-12" />
+                <Skeleton className="h-5 w-8 ml-2" />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="px-4 py-5 sm:p-6">
+        <div className="flex items-center">
+          <div className={`flex-shrink-0 ${iconBgColor} rounded-md p-3`}>
+            {icon}
+          </div>
+          <div className="ml-5 w-0 flex-1">
+            <dt className="text-sm font-medium text-primary-500 truncate">
+              {title}
+            </dt>
+            <dd className="flex items-baseline">
+              <div className="text-2xl font-semibold text-primary-900">
+                {value}
+              </div>
+              <div className={`ml-2 flex items-baseline text-sm font-semibold ${changeColor}`}>
+                {changeSvg}
+                <span className="sr-only">{isPositive ? 'Increased' : 'Decreased'} by</span>
+                {Math.abs(change)}
+              </div>
+            </dd>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default StatCard;
